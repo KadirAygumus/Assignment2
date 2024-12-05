@@ -45,6 +45,7 @@ export const handler: SQSHandler = async (event) => {
               fileName: { S: srcKey }, 
             },
           };
+          
           await dynamoDb.send(new PutItemCommand(putParams));
           console.log(`File ${srcKey} successfully added to the DynamoDB table.`);
         } catch (error) {

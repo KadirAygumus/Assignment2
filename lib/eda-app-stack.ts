@@ -80,9 +80,13 @@ export class EDAAppStack extends cdk.Stack {
     });
     const updateTableFn = new lambdanode.NodejsFunction(this, "updateTableFn", {
       runtime: lambda.Runtime.NODEJS_18_X,
-      memorySize: 1024,
-      timeout: cdk.Duration.seconds(3),
       entry: `${__dirname}/../lambdas/updateTable.ts`,
+      timeout: cdk.Duration.seconds(15),
+      memorySize: 128,
+      environment: {
+        IMAGE_TABLE_NAME: imageTable.tableName,
+      },
+    
     });
     
     // S3 --> SQS
