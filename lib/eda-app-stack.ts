@@ -97,11 +97,6 @@ export class EDAAppStack extends cdk.Stack {
       new s3n.SnsDestination(newImageTopic)  // Changed
     );
 
-    newImageTopic.addSubscription(
-      new subs.LambdaSubscription(updateTableFn, {
-      })
-    );
-
     //event sources
     const newImageEventSource = new events.SqsEventSource(imageProcessQueue, {
       batchSize: 5,

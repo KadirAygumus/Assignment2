@@ -8,7 +8,7 @@ import {
 
 if (!SES_EMAIL_TO || !SES_EMAIL_FROM || !SES_REGION) {
   throw new Error(
-    "Please add the SES_EMAIL_TO, SES_EMAIL_FROM and SES_REGION environment variables in an env.js file located in the root directory"
+    "Please add the SES_EMAIL_TO, SES_EMAIL_FROM, and SES_REGION environment variables in an env.js file located in the root directory"
   );
 }
 
@@ -18,35 +18,32 @@ type ContactDetails = {
   message: string;
 };
 
-const client = new SESClient({ region: SES_REGION});
+const client = new SESClient({ region: SES_REGION });
 
-export const handler: SNSHandler = async (event: any) => {
-  console.log("Event ", JSON.stringify(event));
-  for (const record of event.Records) {
-    const recordBody = JSON.parse(record.body);
-    const snsMessage = JSON.parse(recordBody.Message);
+export const handler: SNSHandler = async (event) => {
+  try {
+    console.log("Received SNS Event:", JSON.stringify(event));
 
-    if (snsMessage.Records) {
-      console.log("Record body ", JSON.stringify(snsMessage));
-      for (const messageRecord of snsMessage.Records) {
-        const s3e = messageRecord.s3;
-        const srcBucket = s3e.bucket.name;
-        // Object key may have spaces or unicode non-ASCII characters.
-        const srcKey = decodeURIComponent(s3e.object.key.replace(/\+/g, " "));
-        try {
-          const { name, email, message }: ContactDetails = {
-            name: "The Photo Album",
-            email: SES_EMAIL_FROM,
-            message: `We received your Image. Its URL is s3://${srcBucket}/${srcKey}`,
-          };
-          const params = sendEmailParams({ name, email, message });
-          await client.send(new SendEmailCommand(params));
-        } catch (error: unknown) {
-          console.log("ERROR is: ", error);
-          // return;
-        }
-      }
+    const snsRecord = event.Records[0];
+    const snsMessage = JSON.parse(snsRecord.Sns.Message);
+
+    const { srcBucket, srcKey } = snsMessage; 
+    if (!srcBucket || !srcKey) {
+      throw new Error("Invalid message format: Missing srcBucket or srcKey.");
     }
+
+    const contactDetails: ContactDetails = {
+      name: "The Photo Album",
+      email: SES_EMAIL_FROM,
+      message: `We received your image. Its URL is s3://${srcBucket}/${srcKey}`,
+    };
+    const params = sendEmailParams(contactDetails);
+
+    await client.send(new SendEmailCommand(params));
+    console.log(`Confirmation email sent successfully for image: ${srcKey}`);
+  } catch (error) {
+    console.error("Error processing SNS message:", error);
+    throw error; 
   }
 };
 
