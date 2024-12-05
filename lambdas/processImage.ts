@@ -9,6 +9,7 @@ import {
 } from "@aws-sdk/client-s3";
 
 const s3 = new S3Client();
+const VALID_IMAGE_EXTENSIONS = [".jpeg", ".jpg", ".png"]; 
 
 export const handler: SQSHandler = async (event) => {
   console.log("Event ", JSON.stringify(event));
@@ -24,7 +25,14 @@ export const handler: SQSHandler = async (event) => {
         // Object key may have spaces or unicode non-ASCII characters.
         const srcKey = decodeURIComponent(s3e.object.key.replace(/\+/g, " "));
         let origimage = null;
+
         try {
+          const fileExtension = getFileExtension(srcKey);
+          if (!VALID_IMAGE_EXTENSIONS.includes(fileExtension)) {
+            console.error(`Invalid file type: ${fileExtension}`);
+            throw new Error(`Unsupported file type: ${fileExtension}`);
+          }
+  
           // Download the image from the S3 source bucket.
           const params: GetObjectCommandInput = {
             Bucket: srcBucket,
@@ -39,3 +47,7 @@ export const handler: SQSHandler = async (event) => {
     }
   }
 };
+function getFileExtension(key: string): string {
+  const parts = key.split(".");
+  return parts.length > 1 ? `.${parts.pop()?.toLowerCase()}` : "";
+}

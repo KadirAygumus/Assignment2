@@ -1,3 +1,4 @@
+/*
 import { SQSHandler } from "aws-lambda";
 import { SES_EMAIL_FROM, SES_EMAIL_TO, SES_REGION } from "../env";
 import {
@@ -101,3 +102,4 @@ function getTextContent({ name, email, message }: ContactDetails) {
     ${message}
   `;
 }
+  */
