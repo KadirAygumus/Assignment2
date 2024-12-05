@@ -42,6 +42,7 @@ export class EDAAppStack extends cdk.Stack {
       },
 
     });
+
     //topic
 
     const newImageTopic = new sns.Topic(this, "NewImageTopic", {
@@ -58,8 +59,13 @@ export class EDAAppStack extends cdk.Stack {
         entry: `${__dirname}/../lambdas/processImage.ts`,
         timeout: cdk.Duration.seconds(15),
         memorySize: 128,
+        environment: {
+          IMAGE_TABLE_NAME: imageTable.tableName,
+        },
+      
       }
     );
+
     const rejectionMailerFn = new lambdanode.NodejsFunction(this, "RejectionMailerFn", {
       runtime: lambda.Runtime.NODEJS_18_X,
       memorySize: 1024,
@@ -76,18 +82,21 @@ export class EDAAppStack extends cdk.Stack {
     
     // S3 --> SQS
 
-    newImageTopic.addSubscription(new subs.SqsSubscription(imageProcessQueue));
-    newImageTopic.addSubscription(new subs.LambdaSubscription(confirmationMailerFn));
 
     imagesBucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
       new s3n.SnsDestination(newImageTopic)  // Changed
     );
 
+    newImageTopic.addSubscription(new subs.SqsSubscription(imageProcessQueue));
+    newImageTopic.addSubscription(new subs.LambdaSubscription(confirmationMailerFn));
+
+
    // SQS --> Lambda
     const newImageEventSource = new events.SqsEventSource(imageProcessQueue, {
       batchSize: 5,
       maxBatchingWindow: cdk.Duration.seconds(5),
+      reportBatchItemFailures: true,
     });
 
     const badImageQueueEventSource = new events.SqsEventSource(
@@ -97,16 +106,7 @@ export class EDAAppStack extends cdk.Stack {
         maxBatchingWindow: cdk.Duration.seconds(5),
       }
     );
-    processImageFn.addEventSource(newImageEventSource)
 
-    
-    rejectionMailerFn.addEventSource(badImageQueueEventSource);
-
-    imagesBucket.grantReadWrite(processImageFn);
-    imageTable.grantWriteData(processImageFn);
-
-    processImageFn.addEventSource(newImageEventSource);
-    
     const sesPolicyStatement =   new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       actions: [
@@ -116,6 +116,14 @@ export class EDAAppStack extends cdk.Stack {
       ],
       resources: ["*"],
     });
+
+
+    processImageFn.addEventSource(newImageEventSource)   
+    rejectionMailerFn.addEventSource(badImageQueueEventSource);
+
+    imagesBucket.grantReadWrite(processImageFn);
+    imageTable.grantWriteData(processImageFn);
+   
 
     rejectionMailerFn.addToRolePolicy(sesPolicyStatement);
     confirmationMailerFn.addToRolePolicy(sesPolicyStatement);
