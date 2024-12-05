@@ -25,7 +25,7 @@ export class EDAAppStack extends cdk.Stack {
     });
     // dynamo db 
     const imageTable = new dynamodb.Table(this, "ImageTable", {
-      partitionKey: { name: "fileName", type: dynamodb.AttributeType.STRING },
+      partitionKey: { name: "id", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
     });
     
@@ -78,7 +78,12 @@ export class EDAAppStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(3),
       entry: `${__dirname}/../lambdas/confirmationMailer.ts`,
     });
-  
+    const updateTableFn = new lambdanode.NodejsFunction(this, "updateTableFn", {
+      runtime: lambda.Runtime.NODEJS_18_X,
+      memorySize: 1024,
+      timeout: cdk.Duration.seconds(3),
+      entry: `${__dirname}/../lambdas/updateTable.ts`,
+    });
     
     // S3 --> SQS
 
@@ -88,11 +93,12 @@ export class EDAAppStack extends cdk.Stack {
       new s3n.SnsDestination(newImageTopic)  // Changed
     );
 
-    newImageTopic.addSubscription(new subs.SqsSubscription(imageProcessQueue));
-    newImageTopic.addSubscription(new subs.LambdaSubscription(confirmationMailerFn));
+    newImageTopic.addSubscription(
+      new subs.LambdaSubscription(updateTableFn, {
+      })
+    );
 
-
-   // SQS --> Lambda
+    //event sources
     const newImageEventSource = new events.SqsEventSource(imageProcessQueue, {
       batchSize: 5,
       maxBatchingWindow: cdk.Duration.seconds(5),
@@ -107,6 +113,7 @@ export class EDAAppStack extends cdk.Stack {
       }
     );
 
+    // policies
     const sesPolicyStatement =   new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       actions: [
@@ -117,17 +124,30 @@ export class EDAAppStack extends cdk.Stack {
       resources: ["*"],
     });
 
+    const metadataFilterPolicy = {
+      metadata_type: sns.SubscriptionFilter.stringFilter({
+        allowlist: ["Caption", "Date", "Photographer"], 
+      }),
+    };    
+    
+    //subscriptions and permissions
+    newImageTopic.addSubscription(new subs.SqsSubscription(imageProcessQueue,{filterPolicy:metadataFilterPolicy}));
+    newImageTopic.addSubscription(new subs.LambdaSubscription(confirmationMailerFn,{filterPolicy:metadataFilterPolicy}));
+    newImageTopic.addSubscription(new subs.LambdaSubscription(updateTableFn , {filterPolicy:metadataFilterPolicy}));
+
 
     processImageFn.addEventSource(newImageEventSource)   
     rejectionMailerFn.addEventSource(badImageQueueEventSource);
 
+
     imagesBucket.grantReadWrite(processImageFn);
     imageTable.grantWriteData(processImageFn);
+    imageTable.grantReadWriteData(updateTableFn);
+
    
 
     rejectionMailerFn.addToRolePolicy(sesPolicyStatement);
     confirmationMailerFn.addToRolePolicy(sesPolicyStatement);
-    // Permissions
   
   
     // Output
@@ -135,8 +155,14 @@ export class EDAAppStack extends cdk.Stack {
     new cdk.CfnOutput(this, "bucketName", {
       value: imagesBucket.bucketName,
     });
-    // Output
-    new cdk.CfnOutput(this, "ImageTableName", { value: imageTable.tableName });
+
+    new cdk.CfnOutput(this, "topicARN", {
+      value: newImageTopic.topicArn,
+    });
+
+    new cdk.CfnOutput(this, "ImageTableName", { 
+        value: imageTable.tableName 
+      });
 
  
   }
