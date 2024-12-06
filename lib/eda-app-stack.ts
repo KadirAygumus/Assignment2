@@ -11,6 +11,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 
 import { Construct } from "constructs";
+import { eventNames } from "process";
 // import * as sqs from 'aws-cdk-lib/aws-sqs';
 
 export class EDAAppStack extends cdk.Stack {
@@ -38,7 +39,7 @@ export class EDAAppStack extends cdk.Stack {
       receiveMessageWaitTime: cdk.Duration.seconds(10),
       deadLetterQueue: {
         queue: badImageProcessQueue,
-        maxReceiveCount: 1,
+        maxReceiveCount: 2,
       },
 
     });
@@ -94,7 +95,7 @@ export class EDAAppStack extends cdk.Stack {
 
     imagesBucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
-      new s3n.SnsDestination(newImageTopic)  // Changed
+      new s3n.SnsDestination(newImageTopic) ,
     );
 
     //event sources
@@ -128,10 +129,26 @@ export class EDAAppStack extends cdk.Stack {
         allowlist: ["Caption", "Date", "Photographer"], 
       }),
     };    
+    const alternateFilterPolicy = {
+      metadata_type: sns.SubscriptionFilter.existsFilter(),
+    }
+  
+    const uploadFilterPolicy = {
+      Records: sns.FilterOrPolicy.policy({
+        eventName: sns.FilterOrPolicy.filter(
+          sns.SubscriptionFilter.stringFilter({
+            allowlist: ["ObjectCreated:Put"],
+          })
+        ),
+      }),
+    };
+    
+
     
     //subscriptions and permissions
-    newImageTopic.addSubscription(new subs.SqsSubscription(imageProcessQueue,{filterPolicy:metadataFilterPolicy}));
-    newImageTopic.addSubscription(new subs.LambdaSubscription(confirmationMailerFn,{filterPolicy:metadataFilterPolicy}));
+    
+    newImageTopic.addSubscription(new subs.SqsSubscription(imageProcessQueue, {filterPolicyWithMessageBody : uploadFilterPolicy}));
+    newImageTopic.addSubscription(new subs.LambdaSubscription(confirmationMailerFn));
     newImageTopic.addSubscription(new subs.LambdaSubscription(updateTableFn , {filterPolicy:metadataFilterPolicy}));
 
 
@@ -140,7 +157,7 @@ export class EDAAppStack extends cdk.Stack {
 
 
     imagesBucket.grantReadWrite(processImageFn);
-    imageTable.grantWriteData(processImageFn);
+    imageTable.grantReadWriteData(processImageFn);
     imageTable.grantReadWriteData(updateTableFn);
 
    

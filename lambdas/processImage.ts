@@ -1,4 +1,3 @@
-/* eslint-disable import/extensions, import/no-absolute-path */
 import { SQSHandler } from "aws-lambda";
 import {
   DynamoDBClient,
@@ -41,7 +40,7 @@ export const handler: SQSHandler = async (event) => {
           const putParams: PutItemCommandInput = {
             TableName: IMAGE_TABLE_NAME,
             Item: {
-              fileName: { S: srcKey }, 
+              id: { S: srcKey }, 
             },
           };
 

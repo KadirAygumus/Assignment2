@@ -8,32 +8,36 @@ export const handler: SNSHandler = async (event) => {
   try {
     console.log("Received SNS Event:", JSON.stringify(event));
 
-    const snsRecord = event.Records[0];
-    const snsMessage = JSON.parse(snsRecord.Sns.Message);
-    const metadataType = snsRecord.Sns.MessageAttributes?.metadata_type?.Value; // Metadata attribute
-    const { id, value } = snsMessage;
+    for (const snsRecord of event.Records) {
+      const snsMessage = JSON.parse(snsRecord.Sns.Message);
+      const metadataType = snsRecord.Sns.MessageAttributes?.metadata_type?.Value; // Metadata attribute
+      const { id, value } = snsMessage;
 
-    if (!id || !value ) {
-      throw new Error("Invalid message format: Missing id or value");
+      if (id && value) {
+        const updateParams = {
+          TableName: IMAGE_TABLE_NAME,
+          Key: { id: { S: id } },
+          UpdateExpression: `SET #attr = :val`,
+          ExpressionAttributeNames: {
+            "#attr": metadataType,
+          },
+          ExpressionAttributeValues: {
+            ":val": { S: value },
+          },
+        };
+
+        try {
+          await dynamoDbClient.send(new UpdateItemCommand(updateParams));
+          console.log(`Successfully updated metadata '${metadataType}' for image ID: ${id}`);
+        } catch (dbError) {
+          console.error(`Error updating DynamoDB for image ID: ${id}:`, dbError);
+        }
+      } else {
+        console.warn(`Invalid message format in record: ${JSON.stringify(snsMessage)}`);
+      }
     }
-
-    const updateParams = {
-      TableName: IMAGE_TABLE_NAME,
-      Key: { id: { S: id } }, 
-      UpdateExpression: `SET #attr = :val`, 
-      ExpressionAttributeNames: {
-        "#attr": metadataType, 
-      },
-      ExpressionAttributeValues: {
-        ":val": { S: value }, 
-      },
-    };
-
-    await dynamoDbClient.send(new UpdateItemCommand(updateParams));
-
-    console.log(`Successfully updated metadata '${metadataType}' for image ID: ${id}`);
   } catch (error) {
     console.error("Error processing SNS message:", error);
-    throw error; 
+    throw error;
   }
 };

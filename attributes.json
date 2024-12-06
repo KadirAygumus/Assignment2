@@ -1,4 +1,9 @@
 {
+    "event_type": {
+        "DataType": "String",
+        "StringValue": "MetadataUpdate"
+      },
+      
     "metadata_type": {
       "DataType": "String",
       "StringValue": "Caption"

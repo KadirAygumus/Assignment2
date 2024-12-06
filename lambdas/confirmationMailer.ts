@@ -21,31 +21,48 @@ type ContactDetails = {
 const client = new SESClient({ region: SES_REGION });
 
 export const handler: SNSHandler = async (event) => {
-  try {
-    console.log("Received SNS Event:", JSON.stringify(event));
+  console.log("Received SNS Event:", JSON.stringify(event));
 
-    const snsRecord = event.Records[0];
-    const snsMessage = JSON.parse(snsRecord.Sns.Message);
+  for (const record of event.Records) {
+    try {
+      const snsMessage = JSON.parse(record.Sns.Message);
 
-    const { srcBucket, srcKey } = snsMessage; 
-    if (!srcBucket || !srcKey) {
-      throw new Error("Invalid message format: Missing srcBucket or srcKey.");
+      if (!snsMessage.Records || snsMessage.Records.length === 0) {
+        console.error("Invalid SNS message: Missing Records.");
+        throw new Error("Invalid SNS message: Missing Records.");
+      }
+
+      for (const messageRecord of snsMessage.Records) {
+        try {
+          const s3e = messageRecord.s3;
+
+          if (!s3e || !s3e.bucket || !s3e.object) {
+            console.error("Invalid S3 structure in SNS message.");
+            throw new Error("Invalid S3 structure in SNS message.");
+          }
+
+          const srcBucket = s3e.bucket.name;
+          const srcKey = decodeURIComponent(s3e.object.key.replace(/\+/g, " "));
+
+          const contactDetails: ContactDetails = {
+            name: "The Photo Album",
+            email: SES_EMAIL_FROM,
+            message: `We received your Image. Its URL is s3://${srcBucket}/${srcKey}`,
+          };
+
+          const params = sendEmailParams(contactDetails);
+          await client.send(new SendEmailCommand(params));
+          console.log(`Confirmation email sent successfully for image: ${srcKey}`);
+        } catch (innerError) {
+          console.error("Error processing individual S3 record:", innerError);
+        }
+      }
+    } catch (outerError) {
+      console.error("Error processing SNS message:", outerError);
     }
-
-    const contactDetails: ContactDetails = {
-      name: "The Photo Album",
-      email: SES_EMAIL_FROM,
-      message: `We received your image. Its URL is s3://${srcBucket}/${srcKey}`,
-    };
-    const params = sendEmailParams(contactDetails);
-
-    await client.send(new SendEmailCommand(params));
-    console.log(`Confirmation email sent successfully for image: ${srcKey}`);
-  } catch (error) {
-    console.error("Error processing SNS message:", error);
-    throw error; 
   }
 };
+
 
 function sendEmailParams({ name, email, message }: ContactDetails) {
   const parameters: SendEmailCommandInput = {
