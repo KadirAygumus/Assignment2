@@ -2,9 +2,7 @@
 
 __Name:__ Kadir Aygumus
 
-__YouTube Demo link__ - [The URL of the video demonstration of the app.]
-
-[ Note: The video must include an audio.]
+__YouTube Demo link__ - https://www.youtube.com/watch?v=9zXYlgO9lO0
 
 ### Phase 1.
 + Confirmation Mailer - Fully implemented.
