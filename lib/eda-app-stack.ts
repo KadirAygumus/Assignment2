@@ -9,6 +9,9 @@ import * as sns from "aws-cdk-lib/aws-sns";
 import * as subs from "aws-cdk-lib/aws-sns-subscriptions";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import { StreamViewType } from "aws-cdk-lib/aws-dynamodb";
+import {  DynamoEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
+import { StartingPosition } from "aws-cdk-lib/aws-lambda";
 
 import { Construct } from "constructs";
 import { eventNames } from "process";
@@ -28,6 +31,7 @@ export class EDAAppStack extends cdk.Stack {
     const imageTable = new dynamodb.Table(this, "ImageTable", {
       partitionKey: { name: "id", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      stream: dynamodb.StreamViewType.NEW_IMAGE, 
     });
     
     //queues
@@ -97,6 +101,10 @@ export class EDAAppStack extends cdk.Stack {
       s3.EventType.OBJECT_CREATED,
       new s3n.SnsDestination(newImageTopic) ,
     );
+    imagesBucket.addEventNotification(
+      s3.EventType.OBJECT_REMOVED,
+      new s3n.SnsDestination(newImageTopic)
+    );
 
     //event sources
     const newImageEventSource = new events.SqsEventSource(imageProcessQueue, {
@@ -128,16 +136,17 @@ export class EDAAppStack extends cdk.Stack {
       metadata_type: sns.SubscriptionFilter.stringFilter({
         allowlist: ["Caption", "Date", "Photographer"], 
       }),
-    };    
+    };  
+    /*  
     const alternateFilterPolicy = {
       metadata_type: sns.SubscriptionFilter.existsFilter(),
     }
-  
+    */
     const uploadFilterPolicy = {
       Records: sns.FilterOrPolicy.policy({
         eventName: sns.FilterOrPolicy.filter(
           sns.SubscriptionFilter.stringFilter({
-            allowlist: ["ObjectCreated:Put"],
+            allowlist: ["ObjectCreated:Put","ObjectRemoved:Delete"],
           })
         ),
       }),
@@ -148,18 +157,22 @@ export class EDAAppStack extends cdk.Stack {
     //subscriptions and permissions
     
     newImageTopic.addSubscription(new subs.SqsSubscription(imageProcessQueue, {filterPolicyWithMessageBody : uploadFilterPolicy}));
-    newImageTopic.addSubscription(new subs.LambdaSubscription(confirmationMailerFn));
+    //newImageTopic.addSubscription(new subs.LambdaSubscription(confirmationMailerFn));
     newImageTopic.addSubscription(new subs.LambdaSubscription(updateTableFn , {filterPolicy:metadataFilterPolicy}));
 
 
     processImageFn.addEventSource(newImageEventSource)   
     rejectionMailerFn.addEventSource(badImageQueueEventSource);
-
+    confirmationMailerFn.addEventSource(
+      new events.DynamoEventSource(imageTable, {
+        startingPosition: lambda.StartingPosition.LATEST,
+      })
+    );
 
     imagesBucket.grantReadWrite(processImageFn);
     imageTable.grantReadWriteData(processImageFn);
     imageTable.grantReadWriteData(updateTableFn);
-
+    imageTable.grantReadData(confirmationMailerFn);
    
 
     rejectionMailerFn.addToRolePolicy(sesPolicyStatement);
