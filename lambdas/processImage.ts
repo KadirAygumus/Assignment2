@@ -1,5 +1,7 @@
 import { SQSHandler } from "aws-lambda";
 import {
+  DeleteItemCommand,
+  DeleteItemCommandInput,
   DynamoDBClient,
   PutItemCommand,
   PutItemCommandInput,
@@ -15,7 +17,6 @@ export const handler: SQSHandler = async (event) => {
   for (const record of event.Records) {
     const recordBody = JSON.parse(record.body); // Parse SQS message
     const snsMessage = JSON.parse(recordBody.Message); // Parse SNS message
-
     if (snsMessage.Records) {
       for (const messageRecord of snsMessage.Records) {
 
@@ -37,15 +38,31 @@ export const handler: SQSHandler = async (event) => {
             throw new Error(`Unsupported file type: ${fileExtension}`);
           }
 
-          const putParams: PutItemCommandInput = {
-            TableName: IMAGE_TABLE_NAME,
-            Item: {
-              id: { S: srcKey }, 
-            },
-          };
-
+        
+          if(messageRecord.eventName === "ObjectCreated:Put"){
+            const putParams: PutItemCommandInput = {
+              TableName: IMAGE_TABLE_NAME,
+              Item: {
+                id: { S: srcKey }, 
+              },
+            };
           await dynamoDb.send(new PutItemCommand(putParams));
           console.log(`File ${srcKey} successfully added to the DynamoDB table.`);
+          }
+          else if(messageRecord.eventName === "ObjectRemoved:Delete"){
+            const deleteParams: DeleteItemCommandInput = {
+              TableName: IMAGE_TABLE_NAME,
+              Key: {
+                id: { S: srcKey }, 
+              },
+            };
+            await dynamoDb.send(new DeleteItemCommand(deleteParams));
+            console.log(`File ${srcKey} successfully deleted from the DynamoDB table.`);
+
+          }
+          else{
+            throw new Error(`Unsupported request type is occured`);
+          }
         } catch (error) {
           console.error(`Error processing file ${srcKey}:`, error);
           throw error; 
